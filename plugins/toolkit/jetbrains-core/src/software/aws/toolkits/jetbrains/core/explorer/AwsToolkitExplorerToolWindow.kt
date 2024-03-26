@@ -35,9 +35,9 @@ class AwsToolkitExplorerToolWindow(
     private val tabPane = JBTabbedPane()
 
     private val tabComponents = mapOf<String, () -> Component>(
+        CODEWHISPERER_Q_TAB_ID to { CodewhispererQToolWindow.getInstance(project) },
         EXPLORER_TAB_ID to { ExplorerToolWindow.getInstance(project) },
         DEVTOOLS_TAB_ID to { DevToolsToolWindow.getInstance(project) }
-
     )
 
     init {
