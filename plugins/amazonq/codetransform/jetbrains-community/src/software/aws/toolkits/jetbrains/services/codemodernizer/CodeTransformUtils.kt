@@ -3,6 +3,7 @@
 
 package software.aws.toolkits.jetbrains.services.codemodernizer
 
+import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.module.ModuleUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VfsUtilCore
@@ -33,15 +34,14 @@ import software.aws.toolkits.jetbrains.core.credentials.sso.bearer.BearerTokenPr
 import software.aws.toolkits.jetbrains.services.codemodernizer.client.GumbyClient
 import software.aws.toolkits.jetbrains.services.codemodernizer.model.JobId
 import software.aws.toolkits.jetbrains.services.codemodernizer.model.MAVEN_CONFIGURATION_FILE_NAME
-import software.aws.toolkits.jetbrains.services.codemodernizer.state.CodeTransformTelemetryState
 import software.aws.toolkits.jetbrains.utils.actions.OpenBrowserAction
 import software.aws.toolkits.resources.message
-import software.aws.toolkits.telemetry.CodetransformTelemetry
 import java.io.File
 import java.io.FileOutputStream
 import java.lang.Thread.sleep
 import java.nio.file.Path
 import java.time.Duration
+import java.time.Instant
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.ZipFile
 import kotlin.io.path.Path
@@ -122,6 +122,8 @@ fun String.toTransformationLanguage() = when (this) {
     else -> TransformationLanguage.UNKNOWN_TO_SDK_VERSION
 }
 
+fun calculateTotalLatency(startTime: Instant, endTime: Instant) = (endTime.toEpochMilli() - startTime.toEpochMilli()).toInt()
+
 data class PollingResult(
     val succeeded: Boolean,
     val jobDetails: TransformationJob?,
@@ -149,6 +151,7 @@ suspend fun JobId.pollTransformationStatusAndPlan(
     maxDuration: Duration = Duration.ofSeconds(604800),
     onStateChange: (previousStatus: TransformationStatus?, currentStatus: TransformationStatus, transformationPlan: TransformationPlan?) -> Unit,
 ): PollingResult {
+    val telemetry = CodeTransformTelemetryManager.getInstance(project)
     var state = TransformationStatus.UNKNOWN_TO_SDK_VERSION
     var transformationResponse: GetTransformationResponse? = null
     var transformationPlan: TransformationPlan? = null
@@ -185,20 +188,10 @@ suspend fun JobId.pollTransformationStatusAndPlan(
                     newPlan = clientAdaptor.getCodeModernizationPlan(this).transformationPlan()
                 }
                 if (newStatus != state) {
-                    CodetransformTelemetry.jobStatusChanged(
-                        codeTransformSessionId = CodeTransformTelemetryState.instance.getSessionId(),
-                        codeTransformJobId = this.id,
-                        codeTransformStatus = newStatus.toString(),
-                        codeTransformPreviousStatus = state.toString()
-                    )
+                    telemetry.jobStatusChanged(this, newStatus.toString(), state.toString())
                 }
                 if (newPlan != transformationPlan) {
-                    CodetransformTelemetry.jobStatusChanged(
-                        codeTransformSessionId = CodeTransformTelemetryState.instance.getSessionId(),
-                        codeTransformJobId = this.id,
-                        codeTransformStatus = "PLAN_UPDATED",
-                        codeTransformPreviousStatus = state.toString()
-                    )
+                    telemetry.jobStatusChanged(this, "PLAN_UPDATED", state.toString())
                 }
                 if (newStatus !in failOn && (newStatus != state || newPlan != transformationPlan)) {
                     transformationPlan = newPlan
@@ -270,6 +263,11 @@ fun findBuildFiles(sourceFolder: File, supportedBuildFileNames: List<String>): L
             // noop, collects the sequence
         }
     return buildFiles
+}
+
+fun isIntellij(): Boolean {
+    val productCode = ApplicationInfo.getInstance().build.productCode
+    return productCode == "IC" || productCode == "IU"
 }
 
 fun isGradleProject(project: Project) = !GradleSettings.getInstance(project).linkedProjectsSettings.isEmpty()

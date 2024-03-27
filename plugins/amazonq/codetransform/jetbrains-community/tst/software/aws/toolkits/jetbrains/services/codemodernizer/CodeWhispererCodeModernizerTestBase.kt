@@ -78,6 +78,7 @@ open class CodeWhispererCodeModernizerTestBase(
     internal lateinit var clientAdaptorSpy: GumbyClient
     internal lateinit var codeModernizerManagerSpy: CodeModernizerManager
     internal lateinit var toolkitConnectionManager: ToolkitConnectionManager
+    internal lateinit var telemetryManagerSpy: CodeTransformTelemetryManager
     lateinit var toolWindowMock: ToolWindow
     lateinit var testSessionContextSpy: CodeModernizerSessionContext
     lateinit var testModernizerBottomWindowPanelSpy: CodeModernizerBottomWindowPanelManager
@@ -216,6 +217,7 @@ open class CodeWhispererCodeModernizerTestBase(
     open fun setup() {
         project = projectRule.project
         toolkitConnectionManager = spy(ToolkitConnectionManager.getInstance(project))
+
         val accessToken = AccessToken(aString(), aString(), aString(), aString(), Instant.MAX, Instant.now())
         val provider = mock<BearerTokenProvider> {
             doReturn(accessToken).whenever(it).refresh()
@@ -231,6 +233,8 @@ open class CodeWhispererCodeModernizerTestBase(
         }
         doReturn(toolkitConnection).whenever(toolkitConnectionManager).activeConnectionForFeature(any())
         project.replaceService(ToolkitConnectionManager::class.java, toolkitConnectionManager, disposableRule.disposable)
+        telemetryManagerSpy = spy(CodeTransformTelemetryManager.getInstance(project))
+        project.replaceService(CodeTransformTelemetryManager::class.java, telemetryManagerSpy, disposableRule.disposable)
         clientAdaptorSpy = spy(GumbyClient.getInstance(project))
         project.replaceService(GumbyClient::class.java, clientAdaptorSpy, disposableRule.disposable)
         testSessionStateSpy = spy(CodeModernizerSessionState.getInstance(project))
@@ -248,7 +252,7 @@ open class CodeWhispererCodeModernizerTestBase(
         testSessionContextSpy = spy(CodeModernizerSessionContext(project, virtualFileMock, JavaSdkVersion.JDK_1_8, JavaSdkVersion.JDK_11))
         testSessionSpy = spy(CodeModernizerSession(testSessionContextSpy, 0, 0))
         doNothing().whenever(testSessionSpy).deleteUploadArtifact(any())
-        doReturn(Job()).whenever(codeModernizerManagerSpy).launchModernizationJob(any())
+        doReturn(Job()).whenever(codeModernizerManagerSpy).launchModernizationJob(any(), any())
         doReturn(testSessionSpy).whenever(codeModernizerManagerSpy).createCodeModernizerSession(any(), any())
         testCodeModernizerArtifact =
             spy(
@@ -272,8 +276,7 @@ open class CodeWhispererCodeModernizerTestBase(
         doReturn(toolWindowMock).whenever(codeModernizerManagerSpy).getBottomToolWindow()
         doNothing().whenever(codeModernizerManagerSpy).notifyTransformationStopped()
         doNothing().whenever(codeModernizerManagerSpy).notifyTransformationStartStopping()
-        doNothing().whenever(codeModernizerManagerSpy).notifyTransformationFailedToStop(any())
-        doNothing().whenever(codeModernizerManagerSpy).notifyTransformationStartCannotYetStop()
+        doNothing().whenever(codeModernizerManagerSpy).notifyTransformationFailedToStop()
     }
 
     companion object {
